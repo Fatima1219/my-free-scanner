@@ -1,0 +1,214 @@
+html<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free Mobile Web Scanner</title>
+    
+    <!-- Ultra-stable, highly reliable public developer script networks -->
+    <script src="https://cloudflare.com"></script>
+    <script src="https://cloudflare.com"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { color: #1a73e8; margin-bottom: 10px; font-size: 24px; }
+        .status { color: #5f6368; font-size: 14px; margin-bottom: 20px; font-weight: bold; padding: 10px; background: #e8eaed; border-radius: 6px; }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+            text-align: center;
+        }
+        video, canvas {
+            width: 100%;
+            max-height: 400px;
+            background: #202124;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            object-fit: contain;
+        }
+        canvas { display: none; } 
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+        button, label {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-block;
+            box-sizing: border-box;
+        }
+        button:disabled, label:disabled { background-color: #ccc; cursor: not-allowed; }
+        #upload-label { background-color: #34a853; }
+        #upload-input { display: none; }
+        #download-btn { background-color: #ea4335; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Web Scanner App</h1>
+        <div id="status" class="status">🧠 Loading OpenCV Brain... Please wait 5-10 seconds...</div>
+
+        <!-- Camera preview element -->
+        <video id="webcam" autoplay playsinline style="display:none;"></video>
+        
+        <!-- Processing destination element -->
+        <canvas id="output-canvas"></canvas>
+
+        <div class="btn-group">
+            <button id="snap-btn" disabled>📸 Take Photo</button>
+            
+            <label id="upload-label" for="upload-input">📁 Upload Photo</label>
+            <input type="file" id="upload-input" accept="image/*">
+            
+            <button id="download-btn">📄 Download Clean PDF</button>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('output-canvas');
+        const snapBtn = document.getElementById('snap-btn');
+        const uploadInput = document.getElementById('upload-input');
+        const downloadBtn = document.getElementById('download-btn');
+        const statusDiv = document.getElementById('status');
+        const ctx = canvas.getContext('2d');
+
+        // --- STEP 1: Simplified, Fail-Proof Initialization ---
+        // We tell OpenCV to notify us directly the split-second it finishes loading
+        var Module = {
+            onRuntimeInitialized: function() {
+                statusDiv.innerText = "✅ System Ready!";
+                startCamera();
+            }
+        };
+
+        // Fallback safety check if browser caches the script layout too quickly
+        if (typeof cv !== 'undefined' && cv.Mat) {
+            statusDiv.innerText = "✅ System Ready!";
+            startCamera();
+        }
+
+        // --- STEP 2: Handle device hardware sorting ---
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                video.style.display = "block";
+                snapBtn.disabled = false;
+            })
+            .catch(err => {
+                console.log("Desktop platform detected or camera missing.");
+                video.style.display = "none";
+                statusDiv.innerText = "🖥️ Desktop Mode: Please upload a photo below.";
+            });
+        }
+
+        // --- STEP 3: Handle Mobile Snap Execution ---
+        snapBtn.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            processAndCleanImage();
+        });
+
+        // --- STEP 4: Handle Desktop File Intake Handling ---
+        uploadInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    processAndCleanImage();
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(files);
+        });
+
+        // --- STEP 5: Run Document Image Optimization Matrix ---
+        function processAndCleanImage() {
+            statusDiv.innerText = "⏳ Cleaning and scanning your document...";
+            video.style.display = "none";
+            canvas.style.display = "block";
+
+            setTimeout(() => {
+                try {
+                    let src = cv.imread(canvas);
+                    let dst = new cv.Mat();
+
+                    // Convert colored image to gray
+                    cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+
+                    // Apply adaptive filter to flatten background shadows
+                    cv.adaptiveThreshold(
+                        src, 
+                        dst, 
+                        255, 
+                        cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                        cv.THRESH_BINARY, 
+                        21, 
+                        10  
+                    );
+
+                    // Draw the crisp black-and-white scan onto our display
+                    cv.imshow(canvas, dst);
+
+                    src.delete();
+                    dst.delete();
+
+                    statusDiv.innerText = "🎉 Document Scan Complete!";
+                    downloadBtn.style.display = "block";
+
+                } catch (error) {
+                    console.error("OpenCV Error: ", error);
+                    statusDiv.innerText = "❌ Processing failed. Please upload a clearer image.";
+                }
+            }, 100);
+        }
+
+        // --- STEP 6: Package Canvas Element Streams Into standard PDF Files ---
+        downloadBtn.addEventListener('click', () => {
+            const { jsPDF } = window.jspdf;
+            
+            const pdf = new jsPDF({
+                orientation: canvas.width > canvas.height ? 'l' : 'p',
+                unit: 'px',
+                format: [canvas.width, canvas.height]
+            });
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.8);
+            pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+            pdf.save('Scanned_Document.pdf');
+        });
+    </script>
+</body>
+</html>
