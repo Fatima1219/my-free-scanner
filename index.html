@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Native Web Scanner App</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { color: #1a73e8; margin-bottom: 10px; font-size: 24px; }
+        .status { color: #5f6368; font-size: 14px; margin-bottom: 20px; font-weight: bold; padding: 10px; background: #e8eaed; border-radius: 6px; }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+            text-align: center;
+        }
+        video, canvas {
+            width: 100%;
+            max-height: 400px;
+            background: #202124;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            object-fit: contain;
+        }
+        canvas { display: none; } 
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+        button, label {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-block;
+            box-sizing: border-box;
+        }
+        button:disabled, label:disabled { background-color: #ccc; cursor: not-allowed; }
+        #upload-label { background-color: #34a853; }
+        #upload-input { display: none; }
+        #download-link {
+            background-color: #ea4335;
+            color: white;
+            text-decoration: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Web Scanner App</h1>
+        <div id="status" class="status">🖥️ Desktop Mode: Please upload a photo below.</div>
+
+        <!-- Document scanning viewfinder (Shown automatically on mobile phone browsers) -->
+        <video id="webcam" autoplay playsinline style="display:none;"></video>
+        <canvas id="output-canvas"></canvas>
+
+        <div class="btn-group">
+            <button id="snap-btn" style="display:none;">📸 Take Photo</button>
+            
+            <label id="upload-label" for="upload-input">📁 Upload Photo</label>
+            <input type="file" id="upload-input" accept="image/*">
+            
+            <a id="download-link" href="#" download="Scanned_Document.jpg">💾 Download Clean Image</a>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('output-canvas');
+        const snapBtn = document.getElementById('snap-btn');
+        const uploadInput = document.getElementById('upload-input');
+        const downloadLink = document.getElementById('download-link');
+        const statusDiv = document.getElementById('status');
+        const ctx = canvas.getContext('2d');
+
+        // --- Activate Environmental Document Camera Natively ---
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                video.style.display = "block";
+                snapBtn.style.display = "block";
+                statusDiv.innerText = "✅ Camera Ready!";
+            })
+            .catch(err => {
+                console.log("Desktop environment found. Standing by for local image uploads.");
+            });
+        }
+
+        // --- Handle File Upload Using High-Speed URL Streams ---
+        uploadInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            statusDiv.innerText = "⏳ Scanning document pixels...";
+            
+            const img = new Image();
+            img.onload = function() {
+                // Safeguard scale limits (Forces absolute maximum computing box sizes)
+                let maxBox = 1000; 
+                let w = img.width;
+                let h = img.height;
+
+                if (w > h && w > maxBox) {
+                    h *= maxBox / w;
+                    w = maxBox;
+                } else if (h > maxBox) {
+                    w *= maxBox / h;
+                    h = maxBox;
+                }
+
+                canvas.width = w;
+                canvas.height = h;
+                
+                // Toggle element states cleanly
+                video.style.display = "none";
+                canvas.style.display = "block";
+                
+                // Render image down inside target bounds instantly
+                ctx.drawImage(img, 0, 0, w, h);
+                
+                // Clear system memory lanes
+                URL.revokeObjectURL(img.src);
+                
+                // Execute image enhancement
+                processAndCleanImage();
+            };
+            
+            // The Magical 1-Line Fix: Creates an instant hardware path directly into image elements
+            img.src = URL.createObjectURL(files[0]);
+        });
+
+        // --- High-Speed Document Whitening Matrix ---
+        function processAndCleanImage() {
+            try {
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    let gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+
+                    // Document binarization: makes paper crisp white and ink dark black
+                    let clean = (gray > 130) ? 255 : gray * 0.3;
+
+                    data[i]     = clean; // R
+                    data[i + 1] = clean; // G
+                    data[i + 2] = clean; // B
+                }
+
+                ctx.putImageData(imgData, 0, 0);
+                statusDiv.innerText = "🎉 Document Scan Complete!";
+                
+                downloadLink.href = canvas.toDataURL('image/jpeg', 0.85);
+                downloadLink.style.display = "block";
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "❌ Canvas rendering block encountered.";
+            }
+        }
+
+        // --- Handle Mobile Camera Snapping ---
+        snapBtn.addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            processAndCleanImage();
+        });
+    </script>
+</body>
+</html>
